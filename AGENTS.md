@@ -1,0 +1,1 @@
+openspec/bases/base-standards.mdc
