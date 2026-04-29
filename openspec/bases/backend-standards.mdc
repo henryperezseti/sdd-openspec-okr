@@ -1,0 +1,694 @@
+---
+description: Estándares de desarrollo backend, buenas prácticas y convenciones para la aplicación OKR SETI con Java/Spring Boot, incluyendo Domain-Driven Design, principios SOLID, patrones de arquitectura, diseño de APIs y prácticas de testing.
+globs: ["backend/src/**/*.java", "backend/pom.xml", "backend/src/main/resources/**/*.yml", "backend/src/main/resources/**/*.properties"]
+alwaysApply: true
+---
+
+# Estándares del Proyecto Backend - OKR SETI
+
+## Tabla de Contenido
+
+- [Visión General](#visión-general)
+- [Stack Tecnológico](#stack-tecnológico)
+- [Arquitectura General](#arquitectura-general)
+- [Principios de Domain-Driven Design](#principios-de-domain-driven-design)
+- [Principios SOLID y DRY](#principios-solid-y-dry)
+- [Estándares de Código](#estándares-de-código)
+- [Diseño de APIs REST](#diseño-de-apis-rest)
+- [Patrones de Base de Datos](#patrones-de-base-de-datos)
+- [Estándares de Testing](#estándares-de-testing)
+- [Seguridad](#seguridad)
+- [Auditoría](#auditoría)
+- [Rendimiento](#rendimiento)
+- [Flujo de Desarrollo](#flujo-de-desarrollo)
+
+---
+
+## Visión General
+
+Este documento define las buenas prácticas, convenciones y estándares del backend de la plataforma OKR SETI. El backend sigue principios de Domain-Driven Design (DDD) e implementa una arquitectura por capas para garantizar consistencia, mantenibilidad y escalabilidad.
+
+## Stack Tecnológico
+
+### Tecnologías Core
+- **Java 17+**: Lenguaje principal
+- **Spring Boot 3.x**: Framework de aplicación
+- **Spring Web**: API REST
+- **Spring Security**: Autenticación y autorización
+
+### Base de Datos y ORM
+- **PostgreSQL**: Base de datos relacional
+- **Spring Data JPA / Hibernate**: ORM y acceso a datos
+- **Flyway o Liquibase**: Migraciones de base de datos
+
+### Testing
+- **JUnit 5**: Framework de testing
+- **Mockito**: Framework de mocking
+- **Spring Boot Test**: Testing de integración
+- **Cobertura mínima**: 80% en líneas, ramas y métodos
+
+### Herramientas de Desarrollo
+- **Maven**: Gestión de dependencias y build
+- **Lombok** (opcional): Reducción de boilerplate
+- **MapStruct** (opcional): Mapeo entre entidades y DTOs
+
+## Arquitectura General
+
+### Arquitectura por Capas (DDD)
+
+```
+backend/
+├── src/main/java/com/seti/okr/
+│   ├── dominio/                    # Capa de Dominio
+│   │   ├── modelo/                 # Entidades y Value Objects
+│   │   ├── repositorio/            # Interfaces de repositorio
+│   │   └── servicio/               # Servicios de dominio
+│   ├── aplicacion/                 # Capa de Aplicación
+│   │   ├── servicio/               # Casos de uso / Servicios de aplicación
+│   │   ├── dto/                    # Data Transfer Objects
+│   │   └── mapper/                 # Mapeos entre capas
+│   ├── infraestructura/            # Capa de Infraestructura
+│   │   ├── persistencia/           # Implementaciones de repositorio (JPA)
+│   │   ├── seguridad/              # Configuración de Spring Security
+│   │   └── auditoria/              # Configuración de auditoría
+│   └── presentacion/               # Capa de Presentación
+│       ├── controlador/            # Controllers REST
+│       ├── excepciones/            # Manejadores globales de excepciones
+│       └── config/                 # Configuración de la aplicación
+├── src/main/resources/
+│   ├── application.yml             # Configuración principal
+│   ├── application-dev.yml         # Configuración de desarrollo
+│   └── db/migration/               # Scripts de migración
+├── src/test/java/                  # Tests
+└── pom.xml                         # Dependencias Maven
+```
+
+**Capa de Dominio** (`dominio/`)
+- Entidades y Value Objects que representan el negocio OKR
+- Interfaces de repositorio (contratos)
+- Servicios de dominio con lógica de negocio pura
+- No tiene dependencias externas (ni Spring, ni JPA annotations en lo posible)
+
+**Capa de Aplicación** (`aplicacion/`)
+- Servicios que orquestan los casos de uso
+- DTOs para transferencia de datos entre capas
+- Validación de entrada
+
+**Capa de Infraestructura** (`infraestructura/`)
+- Implementaciones concretas de repositorios con JPA
+- Configuración de seguridad (Spring Security + LDAP)
+- Configuración de auditoría (Hibernate Envers o tabla propia)
+
+**Capa de Presentación** (`presentacion/`)
+- Controllers REST que reciben peticiones HTTP
+- Manejo global de excepciones
+- Configuración de CORS, serialización, etc.
+
+### Regla de Dependencia
+
+Las dependencias solo fluyen hacia adentro:
+
+```
+Presentación → Aplicación → Dominio ← Infraestructura
+```
+
+El Dominio **nunca** depende de capas externas.
+
+## Principios de Domain-Driven Design
+
+### Entidades
+
+Las entidades tienen identidad única y ciclo de vida.
+
+```java
+// Entidad de dominio: Objetivo
+public class Objetivo {
+    private Long id;
+    private String titulo;
+    private String descripcion;
+    private NivelJerarquico nivel; // ESTRATEGICO, TACTICO, OPERATIVO
+    private Long objetivoPadreId;
+    private PeriodoCuatrimestral periodo;
+    private List<ResultadoClave> resultadosClave;
+
+    public double calcularProgreso() {
+        if (resultadosClave.isEmpty()) return 0.0;
+        return resultadosClave.stream()
+            .mapToDouble(kr -> kr.getAvance() * kr.getPeso())
+            .sum();
+    }
+
+    public EstadoSemaforo obtenerSemaforo(LocalDate fechaActual) {
+        double tiempoTranscurrido = periodo.porcentajeTiempoTranscurrido(fechaActual);
+        double progreso = calcularProgreso();
+        if (progreso < tiempoTranscurrido * 0.4) {
+            return EstadoSemaforo.ROJO;
+        }
+        // ... lógica de semáforo
+    }
+}
+```
+
+### Value Objects
+
+Objetos sin identidad, definidos por sus atributos.
+
+```java
+// Value Object: Periodo Cuatrimestral
+public class PeriodoCuatrimestral {
+    private final int anio;
+    private final Cuatrimestre cuatrimestre; // Q1, Q2, Q3
+    private final LocalDate fechaInicio;
+    private final LocalDate fechaFin;
+
+    public double porcentajeTiempoTranscurrido(LocalDate fechaActual) {
+        long totalDias = ChronoUnit.DAYS.between(fechaInicio, fechaFin);
+        long diasTranscurridos = ChronoUnit.DAYS.between(fechaInicio, fechaActual);
+        return (double) diasTranscurridos / totalDias;
+    }
+}
+```
+
+### Agregados
+
+El `Objetivo` es la raíz del agregado que contiene `ResultadoClave`.
+
+```java
+// Agregado: Objetivo con sus Resultados Clave
+public class Objetivo {
+    private List<ResultadoClave> resultadosClave;
+
+    public void agregarResultadoClave(ResultadoClave kr) {
+        validarSumaPesos(kr);
+        this.resultadosClave.add(kr);
+    }
+
+    private void validarSumaPesos(ResultadoClave nuevoKr) {
+        double sumaActual = resultadosClave.stream()
+            .mapToDouble(ResultadoClave::getPeso)
+            .sum();
+        if (sumaActual + nuevoKr.getPeso() > 1.0) {
+            throw new ReglaNegocioException(
+                "La suma de pesos de los KR no puede superar 100%");
+        }
+    }
+}
+```
+
+### Repositorios
+
+Interfaces en el dominio, implementaciones en infraestructura.
+
+```java
+// Interfaz en capa de Dominio
+public interface ObjetivoRepositorio {
+    Optional<Objetivo> buscarPorId(Long id);
+    List<Objetivo> buscarPorPeriodo(PeriodoCuatrimestral periodo);
+    List<Objetivo> buscarHijosDe(Long objetivoPadreId);
+    Objetivo guardar(Objetivo objetivo);
+}
+
+// Implementación en capa de Infraestructura
+@Repository
+public class ObjetivoRepositorioJpa implements ObjetivoRepositorio {
+    private final ObjetivoJpaRepository jpaRepository;
+
+    @Override
+    public Optional<Objetivo> buscarPorId(Long id) {
+        return jpaRepository.findById(id)
+            .map(ObjetivoMapper::toDominio);
+    }
+}
+```
+
+### Servicios de Dominio
+
+Lógica que no pertenece a una entidad específica.
+
+```java
+public class AlineacionServicio {
+
+    public boolean validarAlineacionTransversal(
+            Objetivo objetivoHijo, Objetivo objetivoPadre) {
+        // Validar que el objetivo hijo pertenece a un nivel inferior
+        if (objetivoHijo.getNivel().ordinal() <= objetivoPadre.getNivel().ordinal()) {
+            throw new ReglaNegocioException(
+                "Un objetivo solo puede alinearse a un nivel superior");
+        }
+        return true;
+    }
+}
+```
+
+## Principios SOLID y DRY
+
+### Responsabilidad Única (SRP)
+
+Cada clase tiene una sola responsabilidad.
+
+```java
+// Bien: Separación de responsabilidades
+public class ObjetivoServicio {          // Orquestación de casos de uso
+public class ObjetivoRepositorioJpa {    // Persistencia
+public class ObjetivoControlador {       // Manejo HTTP
+public class SemaforoServicio {          // Lógica de semáforos
+```
+
+### Inversión de Dependencias (DIP)
+
+Los servicios de aplicación dependen de interfaces, no de implementaciones.
+
+```java
+@Service
+public class ObjetivoServicioApp {
+    private final ObjetivoRepositorio repositorio; // Interfaz, no implementación
+
+    public ObjetivoServicioApp(ObjetivoRepositorio repositorio) {
+        this.repositorio = repositorio;
+    }
+}
+```
+
+### DRY
+
+Centralizar lógica repetida.
+
+```java
+// Bien: Validación centralizada
+public class ValidadorOkr {
+    public static void validarPonderacion(List<ResultadoClave> krs) {
+        double suma = krs.stream().mapToDouble(ResultadoClave::getPeso).sum();
+        if (Math.abs(suma - 1.0) > 0.001) {
+            throw new ReglaNegocioException(
+                "La suma de ponderaciones debe ser exactamente 100%");
+        }
+    }
+}
+```
+
+## Estándares de Código
+
+### Convenciones de Nombrado
+
+- **Paquetes**: minúsculas (`com.seti.okr.dominio.modelo`)
+- **Clases**: PascalCase (`ObjetivoServicio`, `ResultadoClave`)
+- **Métodos y variables**: camelCase (`calcularProgreso`, `objetivoPadreId`)
+- **Constantes**: UPPER_SNAKE_CASE (`PORCENTAJE_ALERTA_ROJO`)
+- **DTOs**: Sufijo `Dto` (`ObjetivoDto`, `CheckInDto`)
+- **Interfaces de repositorio**: Sufijo `Repositorio` (`ObjetivoRepositorio`)
+
+### Idioma en Código
+
+Según el `base-standards.mdc`, todo el código se escribe en **español**:
+
+```java
+// Correcto: Nombres en español
+public class Objetivo {
+    private String titulo;
+    private List<ResultadoClave> resultadosClave;
+
+    public double calcularProgreso() { ... }
+}
+
+// Evitar: Nombres en inglés
+public class Objective {
+    private String title;
+    private List<KeyResult> keyResults;
+
+    public double calculateProgress() { ... }
+}
+```
+
+### Manejo de Excepciones
+
+Crear excepciones de dominio específicas.
+
+```java
+// Excepciones de dominio
+public class ReglaNegocioException extends RuntimeException {
+    public ReglaNegocioException(String mensaje) {
+        super(mensaje);
+    }
+}
+
+public class RecursoNoEncontradoException extends RuntimeException {
+    public RecursoNoEncontradoException(String entidad, Long id) {
+        super(String.format("%s con id %d no encontrado", entidad, id));
+    }
+}
+
+// Manejador global de excepciones
+@RestControllerAdvice
+public class ManejadorGlobalExcepciones {
+
+    @ExceptionHandler(RecursoNoEncontradoException.class)
+    public ResponseEntity<ErrorRespuesta> manejarNoEncontrado(
+            RecursoNoEncontradoException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+            .body(new ErrorRespuesta(ex.getMessage(), "RECURSO_NO_ENCONTRADO"));
+    }
+
+    @ExceptionHandler(ReglaNegocioException.class)
+    public ResponseEntity<ErrorRespuesta> manejarReglaNegocio(
+            ReglaNegocioException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+            .body(new ErrorRespuesta(ex.getMessage(), "REGLA_NEGOCIO"));
+    }
+}
+```
+
+### Validación de Entrada
+
+Usar Bean Validation en los DTOs.
+
+```java
+public class CrearObjetivoDto {
+    @NotBlank(message = "El título es obligatorio")
+    @Size(max = 200, message = "El título no puede superar 200 caracteres")
+    private String titulo;
+
+    @NotNull(message = "El nivel jerárquico es obligatorio")
+    private NivelJerarquico nivel;
+
+    @NotNull(message = "El periodo es obligatorio")
+    private Long periodoId;
+}
+```
+
+## Diseño de APIs REST
+
+### Endpoints
+
+Convención RESTful con recursos en español y plural:
+
+```
+GET    /api/objetivos                  # Listar objetivos (con filtros por periodo, nivel, área)
+GET    /api/objetivos/{id}             # Obtener objetivo por ID
+POST   /api/objetivos                  # Crear objetivo
+PUT    /api/objetivos/{id}             # Actualizar objetivo
+DELETE /api/objetivos/{id}             # Eliminar objetivo
+
+GET    /api/objetivos/{id}/resultados-clave         # Listar KR de un objetivo
+POST   /api/objetivos/{id}/resultados-clave         # Crear KR
+PUT    /api/resultados-clave/{id}                   # Actualizar KR
+
+POST   /api/resultados-clave/{id}/check-ins         # Registrar check-in mensual
+GET    /api/resultados-clave/{id}/check-ins         # Historial de check-ins
+
+GET    /api/dashboard/resumen-ejecutivo             # Dashboard ejecutivo
+GET    /api/dashboard/semaforos                     # Estado de semáforos
+```
+
+### Formato de Respuesta
+
+```java
+// Respuesta exitosa
+{
+    "exito": true,
+    "datos": { ... },
+    "mensaje": "Objetivo creado correctamente"
+}
+
+// Respuesta con lista paginada
+{
+    "exito": true,
+    "datos": [ ... ],
+    "paginacion": {
+        "pagina": 1,
+        "tamanio": 20,
+        "total": 85
+    }
+}
+
+// Respuesta de error
+{
+    "exito": false,
+    "error": {
+        "mensaje": "El título es obligatorio",
+        "codigo": "VALIDACION_ERROR"
+    }
+}
+```
+
+### Códigos HTTP
+
+| Código | Uso |
+|---|---|
+| 200 | Operación exitosa (GET, PUT) |
+| 201 | Recurso creado (POST) |
+| 204 | Sin contenido (DELETE exitoso) |
+| 400 | Error de validación |
+| 401 | No autenticado |
+| 403 | Sin permisos |
+| 404 | Recurso no encontrado |
+| 422 | Violación de regla de negocio |
+
+## Patrones de Base de Datos
+
+### Migraciones
+
+Toda modificación de esquema debe ir en un script de migración versionado.
+
+```sql
+-- V1__crear_tabla_objetivos.sql
+CREATE TABLE objetivos (
+    id BIGSERIAL PRIMARY KEY,
+    titulo VARCHAR(200) NOT NULL,
+    descripcion TEXT,
+    nivel VARCHAR(20) NOT NULL,
+    objetivo_padre_id BIGINT REFERENCES objetivos(id),
+    periodo_id BIGINT NOT NULL REFERENCES periodos(id),
+    area_id BIGINT NOT NULL REFERENCES areas(id),
+    creado_por BIGINT NOT NULL REFERENCES usuarios(id),
+    fecha_creacion TIMESTAMP NOT NULL DEFAULT NOW(),
+    fecha_actualizacion TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE resultados_clave (
+    id BIGSERIAL PRIMARY KEY,
+    objetivo_id BIGINT NOT NULL REFERENCES objetivos(id),
+    descripcion VARCHAR(500) NOT NULL,
+    meta_numerica DECIMAL(10,2) NOT NULL,
+    avance_actual DECIMAL(10,2) DEFAULT 0,
+    peso DECIMAL(3,2) NOT NULL,
+    fecha_creacion TIMESTAMP NOT NULL DEFAULT NOW()
+);
+```
+
+### Convenciones de Nombrado SQL
+
+- **Tablas**: snake_case en plural (`objetivos`, `resultados_clave`)
+- **Columnas**: snake_case (`objetivo_padre_id`, `fecha_creacion`)
+- **Índices**: `idx_{tabla}_{columnas}` (`idx_objetivos_periodo_id`)
+- **Foreign keys**: `fk_{tabla_origen}_{tabla_destino}` (`fk_resultados_clave_objetivos`)
+
+### Patrón Repositorio con JPA
+
+```java
+// Interfaz JPA (infraestructura)
+@Repository
+public interface ObjetivoJpaRepository extends JpaRepository<ObjetivoEntidad, Long> {
+    List<ObjetivoEntidad> findByPeriodoId(Long periodoId);
+    List<ObjetivoEntidad> findByObjetivoPadreId(Long padreId);
+
+    @Query("SELECT o FROM ObjetivoEntidad o WHERE o.area.id = :areaId AND o.periodo.id = :periodoId")
+    List<ObjetivoEntidad> buscarPorAreaYPeriodo(Long areaId, Long periodoId);
+}
+```
+
+## Estándares de Testing
+
+### Estructura de Tests
+
+```java
+@ExtendWith(MockitoExtension.class)
+class ObjetivoServicioTest {
+
+    @Mock
+    private ObjetivoRepositorio repositorio;
+
+    @InjectMocks
+    private ObjetivoServicioApp servicio;
+
+    @Test
+    @DisplayName("Debe calcular progreso ponderado correctamente")
+    void debeCalcularProgresoPonderado() {
+        // Preparar
+        Objetivo objetivo = crearObjetivoConKRs();
+
+        // Actuar
+        double progreso = objetivo.calcularProgreso();
+
+        // Verificar
+        assertThat(progreso).isCloseTo(0.65, within(0.01));
+    }
+
+    @Test
+    @DisplayName("Debe lanzar excepción si suma de pesos supera 100%")
+    void debeLanzarExcepcionSiPesosSuperanCien() {
+        // Preparar
+        Objetivo objetivo = crearObjetivoConPesosAlLimite();
+        ResultadoClave krExcedente = crearKrConPeso(0.5);
+
+        // Actuar y Verificar
+        assertThatThrownBy(() -> objetivo.agregarResultadoClave(krExcedente))
+            .isInstanceOf(ReglaNegocioException.class)
+            .hasMessageContaining("no puede superar 100%");
+    }
+}
+```
+
+### Categorías de Tests Requeridas
+
+1. **Camino feliz**: Entradas válidas producen resultados esperados
+2. **Manejo de errores**: Entradas inválidas, datos faltantes, errores de BD
+3. **Casos borde**: Valores límite, nulos, listas vacías
+4. **Reglas de negocio**: Validaciones de ponderación, semáforos, permisos
+5. **Integración**: Flujos completos con base de datos en memoria (H2)
+
+### Cobertura Mínima
+
+- **80%** en líneas, ramas, funciones y sentencias
+- Generar reportes con `mvn jacoco:report`
+
+## Seguridad
+
+### Autenticación y Autorización
+
+```java
+@Configuration
+@EnableWebSecurity
+public class SeguridadConfig {
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/api/admin/**").hasRole("GERENCIA_GENERAL")
+                .requestMatchers(HttpMethod.PUT, "/api/objetivos/*/progreso")
+                    .access(new OwnerOJefeDirectoAuthorizationManager())
+                .requestMatchers(HttpMethod.GET, "/api/**").authenticated()
+                .anyRequest().authenticated()
+            )
+            .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
+        return http.build();
+    }
+}
+```
+
+### Roles y Permisos del Sistema
+
+| Rol | Permiso |
+|---|---|
+| `GERENCIA_GENERAL` | Habilitar planeación anual, configurar periodos |
+| `OWNER_OKR` | Editar progreso de sus propios OKR |
+| `JEFE_DIRECTO` | Editar progreso de OKR de su equipo |
+| `COLABORADOR` | Visualizar todos los OKR (transparencia total) |
+| `SISTEMA` | Bloquear datos al cierre de cuatrimestre |
+
+### Variables de Entorno
+
+Nunca commitear secretos. Usar `application.yml` con placeholders:
+
+```yaml
+spring:
+  datasource:
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USER}
+    password: ${DATABASE_PASSWORD}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${OAUTH2_ISSUER_URI}
+```
+
+## Auditoría
+
+### Registro de Cambios
+
+Todo cambio en OKR debe quedar registrado con: quién, qué, cuándo, por qué.
+
+```java
+@Entity
+@Table(name = "registro_auditoria")
+public class RegistroAuditoria {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String entidad;
+    private Long entidadId;
+    private String accion; // CREAR, ACTUALIZAR, ELIMINAR
+    private String campoModificado;
+    private String valorAnterior;
+    private String valorNuevo;
+    private String motivo; // Obligatorio en ajustes mid-cycle
+    private Long usuarioId;
+    private LocalDateTime fecha;
+}
+```
+
+### Bloqueo por Cierre de Cuatrimestre
+
+```java
+@Service
+public class BloqueoServicio {
+
+    public void validarPeriodoAbierto(Long periodoId) {
+        Periodo periodo = periodoRepositorio.buscarPorId(periodoId)
+            .orElseThrow(() -> new RecursoNoEncontradoException("Periodo", periodoId));
+
+        if (periodo.estaCerrado()) {
+            throw new ReglaNegocioException(
+                "El periodo " + periodo.getNombre() + " está cerrado. Solo consulta histórica.");
+        }
+    }
+}
+```
+
+## Rendimiento
+
+### Optimización de Consultas
+
+- Usar `@EntityGraph` o `JOIN FETCH` para evitar N+1
+- Paginar resultados en listados grandes
+- Crear índices para columnas frecuentemente consultadas
+
+```java
+@Query("SELECT o FROM ObjetivoEntidad o " +
+       "JOIN FETCH o.resultadosClave " +
+       "WHERE o.periodo.id = :periodoId")
+List<ObjetivoEntidad> buscarConKRsPorPeriodo(Long periodoId);
+```
+
+### Caché
+
+Usar caché para datos que cambian poco (estructura organizacional, periodos):
+
+```java
+@Cacheable("periodos")
+public List<Periodo> listarPeriodos() {
+    return periodoRepositorio.findAll();
+}
+```
+
+## Flujo de Desarrollo
+
+### Scripts Principales
+
+```bash
+mvn clean compile          # Compilar
+mvn test                   # Ejecutar tests
+mvn spring-boot:run        # Levantar servidor de desarrollo
+mvn flyway:migrate         # Ejecutar migraciones
+mvn jacoco:report          # Generar reporte de cobertura
+```
+
+### Git Workflow
+
+- **Ramas por feature**: `feature/crear-objetivos`, `feature/check-ins-mensuales`
+- **Commits descriptivos** en español: `feat: agregar endpoint de check-in mensual`
+- **Pull Request** obligatorio antes de merge a `main`
+
+---
+
+Este documento es la referencia para mantener la calidad y consistencia del backend de OKR SETI. Todos los desarrolladores y agentes de IA deben seguir estas prácticas.

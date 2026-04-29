@@ -1,44 +1,62 @@
 ---
 description: Reglas de ingeniería y principios fundamentales de desarrollo
-para el proyecto QuironERP, aplicables a todos los agentes de IA y desarrolladores.
+para la plataforma OKR SETI, aplicables a todos los agentes de IA y desarrolladores.
 alwaysApply: true
 ---
 
-# Principios Base de Ingeniería - QuironERP
+# Principios Base de Ingeniería - OKR SETI
 
 Este documento establece el "contrato de calidad" que rige la construcción
-de la arquitectura modular. Es la base sobre la cual se ejecutan todos los
-procesos de Spec-Driven Development (SDD).
+de la plataforma de gestión de OKR para SETI (~1.000 colaboradores).
+Es la base sobre la cual se ejecutan todos los procesos de Spec-Driven Development (SDD).
 
-## 1. Principios Core (El Mantra del CoE)
+## 1. Principios Core
 
-- **Acordar antes de construir**: Prohibido generar código sin un `proposal.md` y un `tasks.md` aprobados por el arquitecto. La IA debe actuar como un Ingeniero Senior, no como un simple generador de texto.
+- **Acordar antes de construir**: Prohibido generar código sin un `proposal.md` y un `tasks.md` aprobados. La IA debe actuar como un Ingeniero Senior, no como un simple generador de texto.
 - **Pasos de bebé (Baby Steps)**: Trabajar en tareas atómicas y secuenciales. Nunca avanzar a la siguiente tarea en `tasks.md` si la anterior no ha sido validada y probada.
-- **Test-Driven Development (TDD)**: Toda nueva funcionalidad debe iniciar con la definición de su prueba. El código solo se considera terminado cuando los tests unitarios pasan en la consola.
-- **Seguridad por Diseño (Zero Trust)**: Asumir que la red es hostil. Ningún componente debe confiar en otro sin una identidad gestionada (Managed Identity). Los secretos nunca tocan el sistema de archivos.
-- **Detección de Patrones**: Identificar y resaltar código repetido entre los 10 repositorios. Si una lógica es transversal, debe proponerse su migración al `QuironERP.SharedKernel`.
-- **Cuestionar Suposiciones**: La IA debe preguntar antes de inferir lógica de negocio ambigua, especialmente en módulos de alta complejidad como Requisiciones.
+- **Test-Driven Development (TDD)**: Toda nueva funcionalidad debe iniciar con la definición de su prueba. El código solo se considera terminado cuando los tests pasan en la consola.
+- **Seguridad por Diseño**: La autenticación se gestiona mediante Spring Security integrado con SSO/LDAP corporativo. Los secretos nunca se almacenan en el código fuente ni en el sistema de archivos.
+- **Trazabilidad Total**: Todo cambio en OKR debe quedar registrado en el log de auditoría (quién, qué, cuándo, por qué). Esto aplica tanto al sistema como al proceso de desarrollo.
+- **Cuestionar Suposiciones**: La IA debe preguntar antes de inferir lógica de negocio ambigua, especialmente en reglas de ponderación de KR, semáforos automáticos y permisos por rol.
 
-## 2. Estándares de Idioma y Comunicación
+## 2. Principios de Dominio OKR
 
-OpenSpec (`proposal.md`, `specs`, `design.md`, `tasks.md`), comentarios de código fuente y documentación XML (`///`) deben escribirse estrictamente en **español**.
+- **Transparencia Total**: Todos los colaboradores pueden visualizar todos los OKR de la organización (modelo Google).
+- **Agilidad**: Los OKR se pueden ajustar mid-cycle, pero todo ajuste requiere justificación y queda en auditoría.
+- **Proactividad**: El sistema debe alertar automáticamente (semáforo rojo) cuando un KR tiene avance inferior al 40% respecto al tiempo transcurrido.
+- **Jerarquía padre-hijo**: Los OKR se despliegan en tres niveles (Estratégico → Táctico → Operativo) con soporte para alineación transversal entre áreas.
 
-- **Tono Profesional**: La comunicación debe ser técnica, directa y evitar anglicismos innecesarios (ej. usar "Inyección de Dependencias" en lugar de "Dependency Injection" en las descripciones).
+## 3. Estándares de Idioma y Comunicación
 
-## 3. Calidad y Estilo Transversal
+OpenSpec (`proposal.md`, `specs`, `design.md`, `tasks.md`), comentarios de código fuente y documentación deben escribirse estrictamente en **español**.
 
-- **Clean Architecture**: Respetar estrictamente la jerarquía de capas. El Dominio es el núcleo y no depende de nadie. La Infraestructura y la API son detalles externos.
-- **SOLID & DRY**: Aplicar principios de responsabilidad única. Si una clase crece demasiado, debe refactorizarse mediante el uso de comportamientos (Behaviors) o servicios de dominio.
-- **Inmutabilidad**: Para el transporte de datos (DTOs) y estados de aplicación, el estándar aprueba el uso de clases (class). Aunque se recomienda tener en cuenta la inmutabilidad, no se exigirá el uso exclusivo de records para estos fines.
+- **Tono Profesional**: La comunicación debe ser técnica, directa y evitar anglicismos innecesarios.
 
-## 4. Referencias a Estándares Específicos
+## 4. Stack Tecnológico
+
+| Capa | Tecnología | Justificación |
+|---|---|---|
+| Frontend | Angular | SPA con dashboards complejos, navegación jerárquica y formularios reactivos para check-ins |
+| Backend | Java + Spring Boot | API REST con lógica de negocio, cálculos de ponderación, semáforos y auditoría |
+| Base de datos | PostgreSQL | Estructura relacional para jerarquía padre-hijo de OKR y consultas complejas en reportes |
+| Autenticación | Spring Security + SSO/LDAP | Integración con directorio corporativo existente |
+| Auditoría | Hibernate Envers o tabla propia | Registro automático de cambios mid-cycle |
+
+## 5. Calidad y Estilo Transversal
+
+- **Arquitectura por Capas**: Separar claramente Dominio, Aplicación, Infraestructura y Presentación. El Dominio es el núcleo y no depende de capas externas.
+- **SOLID & DRY**: Aplicar principios de responsabilidad única. Si una clase crece demasiado, refactorizar en servicios de dominio.
+- **Módulos del Sistema**: OKR (CRUD + jerarquía), Seguimiento (check-ins + semáforos), Reportes/Dashboard (vista ejecutiva), Auditoría (log de cambios), Usuarios y Roles (permisos + estructura organizacional).
+- **Convenciones Java**: Seguir las convenciones estándar de nomenclatura de Java y Spring Boot (camelCase para métodos/variables, PascalCase para clases).
+- **Convenciones Angular**: Seguir la guía de estilo oficial de Angular (módulos por feature, componentes standalone cuando aplique).
+
+## 6. Referencias a Estándares Específicos
 
 Para lineamientos detallados por área, consultar:
 
-- [Backend Standards](./backend-standards.mdc) - Desarrollo de APIs .NET 9, EF Core, CQRS y seguridad.
-- [Data Model](./data-model.mdc) - Estándares de entidades, relaciones DDD y convenciones de SQL Server.
-- [Development Guide](./development_guide.mdc) - Guía paso a paso para el flujo diario del desarrollador con IA.
-- [Documentation Standards](./documentation-standards.mdc) - Estructura de XML Docs, Swagger y mantenimiento de la Wiki.
-- [API Specification](./api-spec.yml) - Especificación OpenAPI para los contratos, modelos de datos y diseño de los endpoints del proyecto.
+- [Backend Standards](./backend-standards.mdc) - Desarrollo de APIs Java/Spring Boot, JPA, seguridad y auditoría.
+- [Data Model](./data-model.mdc) - Estándares de entidades, relaciones y convenciones de PostgreSQL.
+- [Frontend Standards](./frontend-standards.mdc) - Desarrollo Angular, componentes, estado y navegación.
+- [Documentation Standards](./documentation-standards.mdc) - Estructura de documentación técnica y funcional.
 
 ---
